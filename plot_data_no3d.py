@@ -64,8 +64,8 @@ try:
             )
             euler_act[key] = np.deg2rad(df_act[col])
 
-    fig = plt.figure(figsize=(20, 10))
-    grid = plt.GridSpec(3, 3, wspace=0.35, hspace=0.4)
+    fig = plt.figure(figsize=(14, 10))
+    grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
         ax.set_title(title, fontweight='bold')
@@ -117,16 +117,6 @@ try:
             fontsize=12,
             color='dimgray'
         )
-
-    # --- ĐỒ THỊ 3D ---
-    ax_3d = fig.add_subplot(grid[:, 2], projection='3d')
-    ax_3d.plot(df_pla['x'], df_pla['y'], df_pla['z'], 'r--', label='Planned Path', linewidth=2)
-    ax_3d.plot(df_act['x'], df_act['y'], df_act['z'], 'b-', label='Actual Path', alpha=0.6)
-    ax_3d.set_title("Quỹ đạo bay 3D", fontsize=14)
-    ax_3d.set_xlabel("X (m)")
-    ax_3d.set_ylabel("Y (m)")
-    ax_3d.set_zlabel("Z (m)")
-    ax_3d.legend()
 
     plt.show()
 

@@ -4,68 +4,75 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
-# 1. Khai báo tên file
-file_act = 'arm_mission_turning/actual_path.csv'
-file_pla = 'arm_mission_turning/planned_path.csv'
+# Dữ liệu tổng hợp trong thư mục summary
+file_plan = 'summary/planned_path.csv'
+file_act_pid = 'summary/actual_path_pid.csv'
+file_act_turning = 'summary/actual_path_turning.csv'
 
-try:
-    # 2. Đọc và xử lý thời gian (Ép về NumPy array để tránh lỗi indexing)
-    def preprocess(df):
-        # Tạo cột t trước
-        t_val = df['time_sec'].values + df['time_nsec'].values * 1e-9
-        df['t'] = t_val
-        return df
 
-    def quaternions_to_euler(df):
-        quat = np.column_stack([df['qx'], df['qy'], df['qz'], df['qw']])
-        euler = Rotation.from_quat(quat).as_euler('xyz', degrees=False)
-        return {
-            'roll': euler[:, 0],
-            'pitch': euler[:, 1],
-            'yaw': euler[:, 2],
-        }
+def preprocess(df):
+    t_val = df['time_sec'].to_numpy() + df['time_nsec'].to_numpy() * 1e-9
+    df = df.copy()
+    df['t'] = t_val
+    df['t_rel'] = df['t'] - t_val[0]
+    return {col: df[col].to_numpy() for col in df.columns}
 
-    # Đọc file và chuyển đổi toàn bộ DataFrame sang Dictionary của Numpy Arrays
-    # Cách này giúp các hàm như np.interp không bao giờ bị lỗi indexing nữa
-    raw_act = preprocess(pd.read_csv(file_act))
-    raw_pla = preprocess(pd.read_csv(file_pla))
-    
-    # Ép kiểu dữ liệu về mảng NumPy thuần túy
-    df_act = {col: raw_act[col].values for col in raw_act.columns}
-    df_pla = {col: raw_pla[col].values for col in raw_pla.columns}
 
-    # Đưa thời gian về gốc 0
-    t_start = df_act['t'].min()
-    df_act['t_rel'] = df_act['t'] - t_start
-    df_pla['t_rel'] = df_pla['t'] - t_start
-
-    # 3. NỘI SUY (Bây giờ truyền vào mảng NumPy nên sẽ không bị lỗi nữa)
-    interp_plan = {
-        'x': np.interp(df_act['t_rel'], df_pla['t_rel'], df_pla['x']),
-        'y': np.interp(df_act['t_rel'], df_pla['t_rel'], df_pla['y']),
-        'z': np.interp(df_act['t_rel'], df_pla['t_rel'], df_pla['z']),
+def quaternions_to_euler(data):
+    quat = np.column_stack([data['qx'], data['qy'], data['qz'], data['qw']])
+    euler = Rotation.from_quat(quat).as_euler('xyz', degrees=False)
+    return {
+        'roll': euler[:, 0],
+        'pitch': euler[:, 1],
+        'yaw': euler[:, 2],
     }
 
-    has_quat = all(col in df_act and col in df_pla for col in ['qx', 'qy', 'qz', 'qw'])
-    has_euler = all(col in df_act and col in df_pla for col in ['roll_deg', 'pitch_deg', 'yaw_deg'])
+
+def build_interp_plan(df_act, df_plan):
+    return {
+        'x': np.interp(df_act['t_rel'], df_plan['t_rel'], df_plan['x']),
+        'y': np.interp(df_act['t_rel'], df_plan['t_rel'], df_plan['y']),
+        'z': np.interp(df_act['t_rel'], df_plan['t_rel'], df_plan['z']),
+    }
+
+
+def build_interp_euler(df_act, df_plan):
+    has_quat = all(col in df_act and col in df_plan for col in ['qx', 'qy', 'qz', 'qw'])
+    has_euler = all(col in df_act and col in df_plan for col in ['roll_deg', 'pitch_deg', 'yaw_deg'])
 
     interp_euler = {}
     euler_act = {}
     if has_quat:
         euler_act = quaternions_to_euler(df_act)
-        euler_pla = quaternions_to_euler(df_pla)
+        euler_plan = quaternions_to_euler(df_plan)
         for key in ['roll', 'pitch', 'yaw']:
-            interp_euler[key] = np.interp(df_act['t_rel'], df_pla['t_rel'], euler_pla[key])
-    elif has_euler:
+            interp_euler[key] = np.interp(df_act['t_rel'], df_plan['t_rel'], euler_plan[key])
+        return interp_euler, euler_act, True
+
+    if has_euler:
         for col in ['roll_deg', 'pitch_deg', 'yaw_deg']:
             key = col.replace('_deg', '')
-            interp_euler[key] = np.deg2rad(
-                np.interp(df_act['t_rel'], df_pla['t_rel'], df_pla[col])
-            )
+            interp_euler[key] = np.deg2rad(np.interp(df_act['t_rel'], df_plan['t_rel'], df_plan[col]))
             euler_act[key] = np.deg2rad(df_act[col])
+        return interp_euler, euler_act, True
 
-    fig = plt.figure(figsize=(20, 10))
-    grid = plt.GridSpec(3, 3, wspace=0.35, hspace=0.4)
+    return {}, {}, False
+
+
+try:
+    df_plan = preprocess(pd.read_csv(file_plan))
+    df_pid = preprocess(pd.read_csv(file_act_pid))
+    df_turning = preprocess(pd.read_csv(file_act_turning))
+
+    interp_plan_pid = build_interp_plan(df_pid, df_plan)
+
+    interp_euler_pid, euler_pid, has_euler_pid = build_interp_euler(df_pid, df_plan)
+    interp_euler_turning, euler_turning, has_euler_turning = build_interp_euler(df_turning, df_plan)
+    can_plot_euler = has_euler_pid and has_euler_turning
+
+    fig = plt.figure(figsize=(20, 10), constrained_layout=True)
+    fig.suptitle('So sánh PID và Turning từ thư mục summary', fontsize=15, fontweight='bold')
+    grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
         ax.set_title(title, fontweight='bold')
@@ -76,34 +83,38 @@ try:
 
     # --- ĐỒ THỊ THEO THỜI GIAN: VỊ TRÍ ---
     ax_x = fig.add_subplot(grid[0, 0])
-    ax_x.plot(df_act['t_rel'], interp_plan['x'], 'r--', label='Reference')
-    ax_x.plot(df_act['t_rel'], df_act['x'], 'b-', label='Actual', alpha=0.7)
-    fix_axis(ax_x, "Tọa độ X", "X (m)")
+    ax_x.plot(df_pid['t_rel'], interp_plan_pid['x'], 'k--', linewidth=1.8, label='Reference')
+    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual PID')
+    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='blue', alpha=0.8, label='Actual Turning')
+    fix_axis(ax_x, 'Tọa độ X', 'X (m)')
 
     ax_y = fig.add_subplot(grid[1, 0])
-    ax_y.plot(df_act['t_rel'], interp_plan['y'], 'r--', label='Reference')
-    ax_y.plot(df_act['t_rel'], df_act['y'], 'g-', label='Actual', alpha=0.7)
-    fix_axis(ax_y, "Tọa độ Y", "Y (m)")
+    ax_y.plot(df_pid['t_rel'], interp_plan_pid['y'], 'k--', linewidth=1.8, label='Reference')
+    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual PID')
+    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='blue', alpha=0.8, label='Actual Turning')
+    fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
 
     ax_z = fig.add_subplot(grid[2, 0])
-    ax_z.plot(df_act['t_rel'], interp_plan['z'], 'r--', label='Reference')
-    ax_z.plot(df_act['t_rel'], df_act['z'], 'm-', label='Actual', alpha=0.7)
-    ax_z.set_xlabel("Thời gian (s)")
-    fix_axis(ax_z, "Tọa độ Z", "Z (m)")
+    ax_z.plot(df_pid['t_rel'], interp_plan_pid['z'], 'k--', linewidth=1.8, label='Reference')
+    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual PID')
+    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='blue', alpha=0.8, label='Actual Turning')
+    ax_z.set_xlabel('Thời gian (s)')
+    fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
 
     # --- ĐỒ THỊ THEO THỜI GIAN: GÓC EULER ---
-    if has_quat or has_euler:
+    if can_plot_euler:
         euler_specs = [
-            ('roll', 'Góc Roll', 'Roll (rad)', 'tab:orange'),
-            ('pitch', 'Góc Pitch', 'Pitch (rad)', 'tab:cyan'),
-            ('yaw', 'Góc Yaw', 'Yaw (rad)', 'tab:brown'),
+            ('roll', 'Góc Roll', 'Roll (rad)'),
+            ('pitch', 'Góc Pitch', 'Pitch (rad)'),
+            ('yaw', 'Góc Yaw', 'Yaw (rad)'),
         ]
-        for idx, (key, title, ylabel, color) in enumerate(euler_specs):
+        for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
-            ax.plot(df_act['t_rel'], interp_euler[key], 'r--', label='Reference')
-            ax.plot(df_act['t_rel'], euler_act[key], color=color, label='Actual', alpha=0.8)
+            ax.plot(df_pid['t_rel'], interp_euler_pid[key], 'k--', linewidth=1.8, label='Reference')
+            ax.plot(df_pid['t_rel'], euler_pid[key], color='red', alpha=0.8, label='Actual PID')
+            ax.plot(df_turning['t_rel'], euler_turning[key], color='blue', alpha=0.8, label='Actual Turning')
             if idx == 2:
-                ax.set_xlabel("Thời gian (s)")
+                ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)
     else:
         ax_note = fig.add_subplot(grid[:, 1])
@@ -111,25 +122,15 @@ try:
         ax_note.text(
             0.5,
             0.5,
-            "Không tìm thấy đủ cột quaternion hoặc Euler\n(`qx`,`qy`,`qz`,`qw` hoặc `roll_deg`,`pitch_deg`,`yaw_deg`)",
+            'Khong tim thay du cot quaternion/Euler de ve goc',
             ha='center',
             va='center',
             fontsize=12,
-            color='dimgray'
+            color='dimgray',
         )
-
-    # --- ĐỒ THỊ 3D ---
-    ax_3d = fig.add_subplot(grid[:, 2], projection='3d')
-    ax_3d.plot(df_pla['x'], df_pla['y'], df_pla['z'], 'r--', label='Planned Path', linewidth=2)
-    ax_3d.plot(df_act['x'], df_act['y'], df_act['z'], 'b-', label='Actual Path', alpha=0.6)
-    ax_3d.set_title("Quỹ đạo bay 3D", fontsize=14)
-    ax_3d.set_xlabel("X (m)")
-    ax_3d.set_ylabel("Y (m)")
-    ax_3d.set_zlabel("Z (m)")
-    ax_3d.legend()
 
     plt.show()
 
-except Exception as e:
+except Exception:
     import traceback
-    print(f"Lỗi cụ thể:\n{traceback.format_exc()}")
+    print(f"Loi cu the:\n{traceback.format_exc()}")

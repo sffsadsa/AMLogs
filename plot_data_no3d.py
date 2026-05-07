@@ -5,8 +5,8 @@ from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
 # 1. Khai báo tên file
-file_act = 'arm_mission_20260508_010109/actual_path.csv'
-file_pla = 'arm_mission_20260508_010109/planned_path.csv'
+file_act = 'arm_mission_pid/actual_path.csv'
+file_pla = 'arm_mission_pid/planned_path.csv'
 
 try:
     # 2. Đọc và xử lý thời gian (Ép về NumPy array để tránh lỗi indexing)

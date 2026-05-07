@@ -71,7 +71,7 @@ try:
     can_plot_euler = has_euler_pid and has_euler_turning
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('So sánh PID và Turning từ thư mục summary', fontsize=15, fontweight='bold')
+    fig.suptitle('So sánh PID và ADRC', fontsize=15, fontweight='bold')
     grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):

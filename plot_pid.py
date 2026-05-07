@@ -5,9 +5,9 @@ from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
 # Dữ liệu tổng hợp trong thư mục summary
-file_plan = 'pid_adrc/planned_path.csv'
-file_act_pid = 'pid_adrc/actual_path_pid.csv'
-file_act_turning = 'pid_adrc/actual_path_adrc.csv'
+file_plan = 'pid_nn/planned_path.csv'
+file_act_pid = 'pid_nn/actual_path_pid.csv'
+file_act_turning = 'pid_nn/actual_path_turning.csv'
 
 
 def preprocess(df):
@@ -71,7 +71,7 @@ try:
     can_plot_euler = has_euler_pid and has_euler_turning
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('So sánh PID và Turning từ thư mục summary', fontsize=15, fontweight='bold')
+    fig.suptitle('So sánh PID và PID Turning', fontsize=15, fontweight='bold')
     grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):

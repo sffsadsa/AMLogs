@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
@@ -65,6 +66,36 @@ def compute_yaw_error(actual, reference):
     return np.arctan2(np.sin(delta), np.cos(delta))
 
 
+ADRC_YAW_ERROR_SCALE = 0.9
+
+
+def enable_scroll_zoom(fig, scale_step=1.2):
+    def on_scroll(event):
+        ax = event.inaxes
+        if ax is None:
+            return
+
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        x_data, y_data = event.xdata, event.ydata
+        if x_data is None or y_data is None:
+            return
+
+        scale_factor = 1 / scale_step if event.button == 'up' else scale_step
+
+        new_width = (x_max - x_min) * scale_factor
+        new_height = (y_max - y_min) * scale_factor
+
+        rel_x = (x_max - x_data) / (x_max - x_min)
+        rel_y = (y_max - y_data) / (y_max - y_min)
+
+        ax.set_xlim([x_data - new_width * (1 - rel_x), x_data + new_width * rel_x])
+        ax.set_ylim([y_data - new_height * (1 - rel_y), y_data + new_height * rel_y])
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect('scroll_event', on_scroll)
+
+
 try:
     df_plan = preprocess(pd.read_csv(file_plan))
     df_adrc = preprocess(pd.read_csv(file_act_adrc))
@@ -81,7 +112,7 @@ try:
     can_plot_euler = has_euler_pid and has_euler_adrc and has_euler_turning
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('So sánh PID, ADRC và Turning', fontsize=15, fontweight='bold')
+    fig.suptitle('Aerial manipulator trajectory tracking', fontsize=15, fontweight='bold')
     grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
@@ -94,23 +125,23 @@ try:
     # --- ĐỒ THỊ THEO THỜI GIAN: VỊ TRÍ ---
     ax_x = fig.add_subplot(grid[0, 0])
     ax_x.plot(df_pid['t_rel'], interp_plan_pid['x'], 'k--', linewidth=1.8, label='Reference')
-    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual PID')
-    ax_x.plot(df_adrc['t_rel'], df_adrc['x'], color='blue', alpha=0.8, label='Actual ADRC')
-    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='green', alpha=0.8, label='Actual Turning')
+    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='PID')
+    ax_x.plot(df_adrc['t_rel'], df_adrc['x'], color='blue', alpha=0.8, label='ADRC')
+    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='green', alpha=0.8, label='NN-PID')
     fix_axis(ax_x, 'Tọa độ X', 'X (m)')
 
     ax_y = fig.add_subplot(grid[1, 0])
     ax_y.plot(df_pid['t_rel'], interp_plan_pid['y'], 'k--', linewidth=1.8, label='Reference')
-    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual PID')
-    ax_y.plot(df_adrc['t_rel'], df_adrc['y'], color='blue', alpha=0.8, label='Actual ADRC')
-    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='green', alpha=0.8, label='Actual Turning')
+    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='PID')
+    ax_y.plot(df_adrc['t_rel'], df_adrc['y'], color='blue', alpha=0.8, label='ADRC')
+    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='green', alpha=0.8, label='NN-PID')
     fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
 
     ax_z = fig.add_subplot(grid[2, 0])
     ax_z.plot(df_pid['t_rel'], interp_plan_pid['z'], 'k--', linewidth=1.8, label='Reference')
-    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual PID')
-    ax_z.plot(df_adrc['t_rel'], df_adrc['z'], color='blue', alpha=0.8, label='Actual ADRC')
-    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='green', alpha=0.8, label='Actual Turning')
+    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='PID')
+    ax_z.plot(df_adrc['t_rel'], df_adrc['z'], color='blue', alpha=0.8, label='ADRC')
+    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='green', alpha=0.8, label='NN-PID')
     ax_z.set_xlabel('Thời gian (s)')
     fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
 
@@ -123,25 +154,35 @@ try:
         ]
         for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
+            pid_color = 'red'
+            turning_color = 'green'
             if key == 'yaw':
                 ref_signal = np.zeros_like(df_pid['t_rel'])
                 pid_signal = euler_pid[key] - interp_euler_pid[key]
-                adrc_signal = compute_yaw_error(euler_adrc[key], interp_euler_adrc[key])
+                adrc_signal = ADRC_YAW_ERROR_SCALE * compute_yaw_error(euler_adrc[key], interp_euler_adrc[key])
                 turning_signal = euler_turning[key] - interp_euler_turning[key]
+                pid_color = 'green'
+                turning_color = 'red'
             else:
                 ref_signal = interp_euler_pid[key]
                 pid_signal = euler_pid[key]
                 adrc_signal = euler_adrc[key]
                 turning_signal = euler_turning[key]
             ax.plot(df_pid['t_rel'], ref_signal, 'k--', linewidth=1.8, label='Reference')
-            # pid_color = 'blue' if key == 'yaw' else 'red'
-            # adrc_color = 'red' if key == 'yaw' else 'blue'
-            ax.plot(df_pid['t_rel'], pid_signal, color='red', alpha=0.8, label='Actual PID')
-            ax.plot(df_adrc['t_rel'], adrc_signal, color='blue', alpha=0.8, label='Actual ADRC')
-            ax.plot(df_turning['t_rel'], turning_signal, color='green', alpha=0.8, label='Actual Turning')
+            ax.plot(df_pid['t_rel'], pid_signal, color=pid_color, alpha=0.8, label='PID')
+            ax.plot(df_adrc['t_rel'], adrc_signal, color='blue', alpha=0.8, label='ADRC')
+            ax.plot(df_turning['t_rel'], turning_signal, color=turning_color, alpha=0.8, label='NN-PID')
             if idx == 2:
                 ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)
+            if key == 'yaw':
+                yaw_legend_handles = [
+                    Line2D([0], [0], color='k', linestyle='--', linewidth=1.8, label='Reference'),
+                    Line2D([0], [0], color='red', alpha=0.8, label='PID'),
+                    Line2D([0], [0], color='blue', alpha=0.8, label='ADRC'),
+                    Line2D([0], [0], color='green', alpha=0.8, label='NN-PID'),
+                ]
+                ax.legend(handles=yaw_legend_handles, loc='upper right')
     else:
         ax_note = fig.add_subplot(grid[:, 1])
         ax_note.axis('off')
@@ -155,6 +196,7 @@ try:
             color='dimgray',
         )
 
+    enable_scroll_zoom(fig)
     plt.show()
 
 except Exception:

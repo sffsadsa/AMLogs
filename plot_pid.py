@@ -110,9 +110,17 @@ try:
         ]
         for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
-            ax.plot(df_pid['t_rel'], interp_euler_pid[key], 'k--', linewidth=1.8, label='Reference')
-            ax.plot(df_pid['t_rel'], euler_pid[key], color='red', alpha=0.8, label='Actual ADRC')
-            ax.plot(df_turning['t_rel'], euler_turning[key], color='blue', alpha=0.8, label='Actual NN-PID')
+            if key == 'yaw':
+                ref_signal = np.zeros_like(df_pid['t_rel'])
+                pid_signal = euler_pid[key] - interp_euler_pid[key]
+                turning_signal = euler_turning[key] - interp_euler_turning[key]
+            else:
+                ref_signal = interp_euler_pid[key]
+                pid_signal = euler_pid[key]
+                turning_signal = euler_turning[key]
+            ax.plot(df_pid['t_rel'], ref_signal, 'k--', linewidth=1.8, label='Reference')
+            ax.plot(df_pid['t_rel'], pid_signal, color='red', alpha=0.8, label='Actual ADRC')
+            ax.plot(df_turning['t_rel'], turning_signal, color='blue', alpha=0.8, label='Actual NN-PID')
             if idx == 2:
                 ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)

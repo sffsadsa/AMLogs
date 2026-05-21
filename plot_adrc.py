@@ -6,9 +6,9 @@ from scipy.spatial.transform import Rotation
 
 # Dữ liệu tổng hợp trong thư mục summary
 file_plan = 'pid_adrc/planned_path.csv'
-file_act_pid = 'pid_adrc/actual_path_adrc.csv'
-file_act_turning = 'pid_adrc/actual_path_pid.csv'
-
+file_act_adrc = 'pid_adrc/actual_path_adrc.csv'
+file_act_pid = 'pid_adrc/actual_path_pid.csv'
+file_act_turning = 'pid_adrc/actual_path_turning.csv'
 
 def preprocess(df):
     t_val = df['time_sec'].to_numpy() + df['time_nsec'].to_numpy() * 1e-9
@@ -61,17 +61,21 @@ def build_interp_euler(df_act, df_plan):
 
 try:
     df_plan = preprocess(pd.read_csv(file_plan))
+    df_adrc = preprocess(pd.read_csv(file_act_adrc))
     df_pid = preprocess(pd.read_csv(file_act_pid))
     df_turning = preprocess(pd.read_csv(file_act_turning))
 
     interp_plan_pid = build_interp_plan(df_pid, df_plan)
+    interp_plan_adrc = build_interp_plan(df_adrc, df_plan)
+    interp_plan_turning = build_interp_plan(df_turning, df_plan)
 
     interp_euler_pid, euler_pid, has_euler_pid = build_interp_euler(df_pid, df_plan)
+    interp_euler_adrc, euler_adrc, has_euler_adrc = build_interp_euler(df_adrc, df_plan)
     interp_euler_turning, euler_turning, has_euler_turning = build_interp_euler(df_turning, df_plan)
-    can_plot_euler = has_euler_pid and has_euler_turning
+    can_plot_euler = has_euler_pid and has_euler_adrc and has_euler_turning
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('So sánh PID và ADRC', fontsize=15, fontweight='bold')
+    fig.suptitle('So sánh PID, ADRC và Turning', fontsize=15, fontweight='bold')
     grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
@@ -85,19 +89,22 @@ try:
     ax_x = fig.add_subplot(grid[0, 0])
     ax_x.plot(df_pid['t_rel'], interp_plan_pid['x'], 'k--', linewidth=1.8, label='Reference')
     ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual PID')
-    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='blue', alpha=0.8, label='Actual ADRC')
+    ax_x.plot(df_adrc['t_rel'], df_adrc['x'], color='blue', alpha=0.8, label='Actual ADRC')
+    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='green', alpha=0.8, label='Actual Turning')
     fix_axis(ax_x, 'Tọa độ X', 'X (m)')
 
     ax_y = fig.add_subplot(grid[1, 0])
     ax_y.plot(df_pid['t_rel'], interp_plan_pid['y'], 'k--', linewidth=1.8, label='Reference')
     ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual PID')
-    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='blue', alpha=0.8, label='Actual ADRC')
+    ax_y.plot(df_adrc['t_rel'], df_adrc['y'], color='blue', alpha=0.8, label='Actual ADRC')
+    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='green', alpha=0.8, label='Actual Turning')
     fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
 
     ax_z = fig.add_subplot(grid[2, 0])
     ax_z.plot(df_pid['t_rel'], interp_plan_pid['z'], 'k--', linewidth=1.8, label='Reference')
     ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual PID')
-    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='blue', alpha=0.8, label='Actual ADRC')
+    ax_z.plot(df_adrc['t_rel'], df_adrc['z'], color='blue', alpha=0.8, label='Actual ADRC')
+    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='green', alpha=0.8, label='Actual Turning')
     ax_z.set_xlabel('Thời gian (s)')
     fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
 
@@ -110,11 +117,22 @@ try:
         ]
         for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
-            ax.plot(df_pid['t_rel'], interp_euler_pid[key], 'k--', linewidth=1.8, label='Reference')
+            if key == 'yaw':
+                ref_signal = np.zeros_like(df_pid['t_rel'])
+                pid_signal = euler_pid[key] - interp_euler_pid[key]
+                adrc_signal = euler_adrc[key] - interp_euler_adrc[key]
+                turning_signal = euler_turning[key] - interp_euler_turning[key]
+            else:
+                ref_signal = interp_euler_pid[key]
+                pid_signal = euler_pid[key]
+                adrc_signal = euler_adrc[key]
+                turning_signal = euler_turning[key]
+            ax.plot(df_pid['t_rel'], ref_signal, 'k--', linewidth=1.8, label='Reference')
             # pid_color = 'blue' if key == 'yaw' else 'red'
             # adrc_color = 'red' if key == 'yaw' else 'blue'
-            ax.plot(df_pid['t_rel'], euler_pid[key], color='red', alpha=0.8, label='Actual PID')
-            ax.plot(df_turning['t_rel'], euler_turning[key], color='blue', alpha=0.8, label='Actual ADRC')
+            ax.plot(df_pid['t_rel'], pid_signal, color='red', alpha=0.8, label='Actual PID')
+            ax.plot(df_adrc['t_rel'], adrc_signal, color='blue', alpha=0.8, label='Actual ADRC')
+            ax.plot(df_turning['t_rel'], turning_signal, color='green', alpha=0.8, label='Actual Turning')
             if idx == 2:
                 ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)

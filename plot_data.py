@@ -100,8 +100,14 @@ try:
         ]
         for idx, (key, title, ylabel, color) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
-            ax.plot(df_act['t_rel'], interp_euler[key], 'r--', label='Reference')
-            ax.plot(df_act['t_rel'], euler_act[key], color=color, label='Actual', alpha=0.8)
+            if key == 'yaw':
+                ref_signal = np.zeros_like(df_act['t_rel'])
+                act_signal = euler_act[key] - interp_euler[key]
+            else:
+                ref_signal = interp_euler[key]
+                act_signal = euler_act[key]
+            ax.plot(df_act['t_rel'], ref_signal, 'r--', label='Reference')
+            ax.plot(df_act['t_rel'], act_signal, color=color, label='Actual', alpha=0.8)
             if idx == 2:
                 ax.set_xlabel("Thời gian (s)")
             fix_axis(ax, title, ylabel)

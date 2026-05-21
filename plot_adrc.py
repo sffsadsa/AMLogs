@@ -111,10 +111,10 @@ try:
         for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
             ax.plot(df_pid['t_rel'], interp_euler_pid[key], 'k--', linewidth=1.8, label='Reference')
-            pid_color = 'blue' if key == 'yaw' else 'red'
-            adrc_color = 'red' if key == 'yaw' else 'blue'
-            ax.plot(df_pid['t_rel'], euler_pid[key], color=pid_color, alpha=0.8, label='Actual PID')
-            ax.plot(df_turning['t_rel'], euler_turning[key], color=adrc_color, alpha=0.8, label='Actual ADRC')
+            # pid_color = 'blue' if key == 'yaw' else 'red'
+            # adrc_color = 'red' if key == 'yaw' else 'blue'
+            ax.plot(df_pid['t_rel'], euler_pid[key], color='red', alpha=0.8, label='Actual PID')
+            ax.plot(df_turning['t_rel'], euler_turning[key], color='blue', alpha=0.8, label='Actual ADRC')
             if idx == 2:
                 ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)

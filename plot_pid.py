@@ -71,7 +71,7 @@ try:
     can_plot_euler = has_euler_pid and has_euler_turning
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('So sánh PID và PID Turning', fontsize=15, fontweight='bold')
+    fig.suptitle('So sánh NN-PID và ADRC', fontsize=15, fontweight='bold')
     grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
@@ -84,20 +84,20 @@ try:
     # --- ĐỒ THỊ THEO THỜI GIAN: VỊ TRÍ ---
     ax_x = fig.add_subplot(grid[0, 0])
     ax_x.plot(df_pid['t_rel'], interp_plan_pid['x'], 'k--', linewidth=1.8, label='Reference')
-    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual PID')
-    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='blue', alpha=0.8, label='Actual Turning')
+    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual ADRC')
+    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='blue', alpha=0.8, label='Actual NN-PID')
     fix_axis(ax_x, 'Tọa độ X', 'X (m)')
 
     ax_y = fig.add_subplot(grid[1, 0])
     ax_y.plot(df_pid['t_rel'], interp_plan_pid['y'], 'k--', linewidth=1.8, label='Reference')
-    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual PID')
-    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='blue', alpha=0.8, label='Actual Turning')
+    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual ADRC')
+    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='blue', alpha=0.8, label='Actual NN-PID')
     fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
 
     ax_z = fig.add_subplot(grid[2, 0])
     ax_z.plot(df_pid['t_rel'], interp_plan_pid['z'], 'k--', linewidth=1.8, label='Reference')
-    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual PID')
-    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='blue', alpha=0.8, label='Actual Turning')
+    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual ADRC')
+    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='blue', alpha=0.8, label='Actual NN-PID')
     ax_z.set_xlabel('Thời gian (s)')
     fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
 
@@ -111,8 +111,8 @@ try:
         for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
             ax.plot(df_pid['t_rel'], interp_euler_pid[key], 'k--', linewidth=1.8, label='Reference')
-            ax.plot(df_pid['t_rel'], euler_pid[key], color='red', alpha=0.8, label='Actual PID')
-            ax.plot(df_turning['t_rel'], euler_turning[key], color='blue', alpha=0.8, label='Actual Turning')
+            ax.plot(df_pid['t_rel'], euler_pid[key], color='red', alpha=0.8, label='Actual ADRC')
+            ax.plot(df_turning['t_rel'], euler_turning[key], color='blue', alpha=0.8, label='Actual NN-PID')
             if idx == 2:
                 ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)

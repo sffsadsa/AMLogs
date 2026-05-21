@@ -59,6 +59,12 @@ def build_interp_euler(df_act, df_plan):
     return {}, {}, False
 
 
+def compute_yaw_error(actual, reference):
+    # Shortest-angle difference in [-pi, pi] to avoid artificial 2*pi jumps.
+    delta = actual - reference
+    return np.arctan2(np.sin(delta), np.cos(delta))
+
+
 try:
     df_plan = preprocess(pd.read_csv(file_plan))
     df_adrc = preprocess(pd.read_csv(file_act_adrc))
@@ -120,7 +126,7 @@ try:
             if key == 'yaw':
                 ref_signal = np.zeros_like(df_pid['t_rel'])
                 pid_signal = euler_pid[key] - interp_euler_pid[key]
-                adrc_signal = euler_adrc[key] - interp_euler_adrc[key]
+                adrc_signal = compute_yaw_error(euler_adrc[key], interp_euler_adrc[key])
                 turning_signal = euler_turning[key] - interp_euler_turning[key]
             else:
                 ref_signal = interp_euler_pid[key]

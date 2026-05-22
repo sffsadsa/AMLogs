@@ -111,9 +111,15 @@ try:
     interp_euler_turning, euler_turning, has_euler_turning = build_interp_euler(df_turning, df_plan)
     can_plot_euler = has_euler_pid and has_euler_adrc and has_euler_turning
 
+    # Giới hạn dữ liệu actual ở 120s để trùng với planned_path
+    max_time = 125.0
+    mask_pid = df_pid['t_rel'] <= max_time
+    mask_adrc = df_adrc['t_rel'] <= max_time
+    mask_turning = df_turning['t_rel'] <= max_time
+
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('Aerial manipulator trajectory tracking', fontsize=15, fontweight='bold')
-    grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
+    fig.suptitle('Aerial manipulator trajectory tracking', fontsize=15, fontweight='bold', y=0.95)
+    grid = plt.GridSpec(3, 2, wspace=0.3, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
         ax.set_title(title, fontweight='bold')
@@ -121,27 +127,28 @@ try:
         ax.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right')
+        ax.set_xlim(0, 125)
 
     # --- ĐỒ THỊ THEO THỜI GIAN: VỊ TRÍ ---
     ax_x = fig.add_subplot(grid[0, 0])
-    ax_x.plot(df_pid['t_rel'], interp_plan_pid['x'], 'k--', linewidth=1.8, label='Reference')
-    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='PID')
-    ax_x.plot(df_adrc['t_rel'], df_adrc['x'], color='blue', alpha=0.8, label='ADRC')
-    ax_x.plot(df_turning['t_rel'], df_turning['x'], color='green', alpha=0.8, label='NN-PID')
+    ax_x.plot(df_pid['t_rel'][mask_pid], interp_plan_pid['x'][mask_pid], 'k--', linewidth=1.8, label='Reference')
+    ax_x.plot(df_pid['t_rel'][mask_pid], df_pid['x'][mask_pid], color='red', alpha=0.8, label='PID')
+    ax_x.plot(df_adrc['t_rel'][mask_adrc], df_adrc['x'][mask_adrc], color='blue', alpha=0.8, label='ADRC')
+    ax_x.plot(df_turning['t_rel'][mask_turning], df_turning['x'][mask_turning], color='green', alpha=0.8, label='NN-PID')
     fix_axis(ax_x, 'Tọa độ X', 'X (m)')
 
     ax_y = fig.add_subplot(grid[1, 0])
-    ax_y.plot(df_pid['t_rel'], interp_plan_pid['y'], 'k--', linewidth=1.8, label='Reference')
-    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='PID')
-    ax_y.plot(df_adrc['t_rel'], df_adrc['y'], color='blue', alpha=0.8, label='ADRC')
-    ax_y.plot(df_turning['t_rel'], df_turning['y'], color='green', alpha=0.8, label='NN-PID')
+    ax_y.plot(df_pid['t_rel'][mask_pid], interp_plan_pid['y'][mask_pid], 'k--', linewidth=1.8, label='Reference')
+    ax_y.plot(df_pid['t_rel'][mask_pid], df_pid['y'][mask_pid], color='red', alpha=0.8, label='PID')
+    ax_y.plot(df_adrc['t_rel'][mask_adrc], df_adrc['y'][mask_adrc], color='blue', alpha=0.8, label='ADRC')
+    ax_y.plot(df_turning['t_rel'][mask_turning], df_turning['y'][mask_turning], color='green', alpha=0.8, label='NN-PID')
     fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
 
     ax_z = fig.add_subplot(grid[2, 0])
-    ax_z.plot(df_pid['t_rel'], interp_plan_pid['z'], 'k--', linewidth=1.8, label='Reference')
-    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='PID')
-    ax_z.plot(df_adrc['t_rel'], df_adrc['z'], color='blue', alpha=0.8, label='ADRC')
-    ax_z.plot(df_turning['t_rel'], df_turning['z'], color='green', alpha=0.8, label='NN-PID')
+    ax_z.plot(df_pid['t_rel'][mask_pid], interp_plan_pid['z'][mask_pid], 'k--', linewidth=1.8, label='Reference')
+    ax_z.plot(df_pid['t_rel'][mask_pid], df_pid['z'][mask_pid], color='red', alpha=0.8, label='PID')
+    ax_z.plot(df_adrc['t_rel'][mask_adrc], df_adrc['z'][mask_adrc], color='blue', alpha=0.8, label='ADRC')
+    ax_z.plot(df_turning['t_rel'][mask_turning], df_turning['z'][mask_turning], color='green', alpha=0.8, label='NN-PID')
     ax_z.set_xlabel('Thời gian (s)')
     fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
 
@@ -168,10 +175,10 @@ try:
                 pid_signal = euler_pid[key]
                 adrc_signal = euler_adrc[key]
                 turning_signal = euler_turning[key]
-            ax.plot(df_pid['t_rel'], ref_signal, 'k--', linewidth=1.8, label='Reference')
-            ax.plot(df_pid['t_rel'], pid_signal, color=pid_color, alpha=0.8, label='PID')
-            ax.plot(df_adrc['t_rel'], adrc_signal, color='blue', alpha=0.8, label='ADRC')
-            ax.plot(df_turning['t_rel'], turning_signal, color=turning_color, alpha=0.8, label='NN-PID')
+            ax.plot(df_pid['t_rel'][mask_pid], ref_signal[mask_pid], 'k--', linewidth=1.8, label='Reference')
+            ax.plot(df_pid['t_rel'][mask_pid], pid_signal[mask_pid], color=pid_color, alpha=0.8, label='PID')
+            ax.plot(df_adrc['t_rel'][mask_adrc], adrc_signal[mask_adrc], color='blue', alpha=0.8, label='ADRC')
+            ax.plot(df_turning['t_rel'][mask_turning], turning_signal[mask_turning], color=turning_color, alpha=0.8, label='NN-PID')
             if idx == 2:
                 ax.set_xlabel('Thời gian (s)')
             fix_axis(ax, title, ylabel)

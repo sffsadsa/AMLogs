@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
-# Dữ liệu tổng hợp trong thư mục summary
+# Aggregated data in the summary directory
 file_plan = 'pid_nn/planned_path.csv'
 file_act_pid = 'pid_nn/actual_path_pid.csv'
 file_act_turning = 'pid_nn/actual_path_turning.csv'
@@ -71,7 +71,7 @@ try:
     can_plot_euler = has_euler_pid and has_euler_turning
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('So sánh NN-PID và ADRC', fontsize=15, fontweight='bold')
+    fig.suptitle('Trajectory response using NN-PID and PID', fontsize=15, fontweight='bold')
     grid = plt.GridSpec(3, 2, wspace=0.35, hspace=0.4)
 
     def fix_axis(ax, title, ylabel):
@@ -81,32 +81,32 @@ try:
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right')
 
-    # --- ĐỒ THỊ THEO THỜI GIAN: VỊ TRÍ ---
+    # --- TIME SERIES: POSITION ---
     ax_x = fig.add_subplot(grid[0, 0])
     ax_x.plot(df_pid['t_rel'], interp_plan_pid['x'], 'k--', linewidth=1.8, label='Reference')
-    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual ADRC')
+    ax_x.plot(df_pid['t_rel'], df_pid['x'], color='red', alpha=0.8, label='Actual PID')
     ax_x.plot(df_turning['t_rel'], df_turning['x'], color='blue', alpha=0.8, label='Actual NN-PID')
-    fix_axis(ax_x, 'Tọa độ X', 'X (m)')
+    fix_axis(ax_x, 'X Position', 'X (m)')
 
     ax_y = fig.add_subplot(grid[1, 0])
     ax_y.plot(df_pid['t_rel'], interp_plan_pid['y'], 'k--', linewidth=1.8, label='Reference')
-    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual ADRC')
+    ax_y.plot(df_pid['t_rel'], df_pid['y'], color='red', alpha=0.8, label='Actual PID')
     ax_y.plot(df_turning['t_rel'], df_turning['y'], color='blue', alpha=0.8, label='Actual NN-PID')
-    fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
+    fix_axis(ax_y, 'Y Position', 'Y (m)')
 
     ax_z = fig.add_subplot(grid[2, 0])
     ax_z.plot(df_pid['t_rel'], interp_plan_pid['z'], 'k--', linewidth=1.8, label='Reference')
-    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual ADRC')
+    ax_z.plot(df_pid['t_rel'], df_pid['z'], color='red', alpha=0.8, label='Actual PID')
     ax_z.plot(df_turning['t_rel'], df_turning['z'], color='blue', alpha=0.8, label='Actual NN-PID')
-    ax_z.set_xlabel('Thời gian (s)')
-    fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
+    ax_z.set_xlabel('Time (s)')
+    fix_axis(ax_z, 'Z Position', 'Z (m)')
 
-    # --- ĐỒ THỊ THEO THỜI GIAN: GÓC EULER ---
+    # --- TIME SERIES: EULER ANGLES ---
     if can_plot_euler:
         euler_specs = [
-            ('roll', 'Góc Roll', 'Roll (rad)'),
-            ('pitch', 'Góc Pitch', 'Pitch (rad)'),
-            ('yaw', 'Góc Yaw', 'Yaw (rad)'),
+            ('roll', 'Roll Angle', 'Roll (rad)'),
+            ('pitch', 'Pitch Angle', 'Pitch (rad)'),
+            ('yaw', 'Yaw Angle', 'Yaw (rad)'),
         ]
         for idx, (key, title, ylabel) in enumerate(euler_specs):
             ax = fig.add_subplot(grid[idx, 1])
@@ -119,10 +119,17 @@ try:
                 pid_signal = euler_pid[key]
                 turning_signal = euler_turning[key]
             ax.plot(df_pid['t_rel'], ref_signal, 'k--', linewidth=1.8, label='Reference')
-            ax.plot(df_pid['t_rel'], pid_signal, color='red', alpha=0.8, label='Actual ADRC')
-            ax.plot(df_turning['t_rel'], turning_signal, color='blue', alpha=0.8, label='Actual NN-PID')
+            if key == 'yaw':
+                # Swap line colors; keep legend colors (PID=red, NN-PID=blue)
+                ax.plot(df_pid['t_rel'], pid_signal, color='blue', alpha=0.8)
+                ax.plot(df_turning['t_rel'], turning_signal, color='red', alpha=0.8)
+                ax.plot([], [], color='red', alpha=0.8, label='Actual PID')
+                ax.plot([], [], color='blue', alpha=0.8, label='Actual NN-PID')
+            else:
+                ax.plot(df_pid['t_rel'], pid_signal, color='red', alpha=0.8, label='Actual PID')
+                ax.plot(df_turning['t_rel'], turning_signal, color='blue', alpha=0.8, label='Actual NN-PID')
             if idx == 2:
-                ax.set_xlabel('Thời gian (s)')
+                ax.set_xlabel('Time (s)')
             fix_axis(ax, title, ylabel)
     else:
         ax_note = fig.add_subplot(grid[:, 1])
@@ -130,7 +137,7 @@ try:
         ax_note.text(
             0.5,
             0.5,
-            'Khong tim thay du cot quaternion/Euler de ve goc',
+            'Missing quaternion/Euler columns to plot angles',
             ha='center',
             va='center',
             fontsize=12,
@@ -141,4 +148,4 @@ try:
 
 except Exception:
     import traceback
-    print(f"Loi cu the:\n{traceback.format_exc()}")
+    print(f"Error details:\n{traceback.format_exc()}")

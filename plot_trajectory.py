@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
+WORKSPACE_DIR = Path(__file__).resolve().parent
+DEFAULT_RUN_DIR = WORKSPACE_DIR / 'am_2907'
+
 
 def find_latest_run(workspace_root):
     """Find the latest run directory in logs/trajectory_runs/."""
@@ -253,13 +256,11 @@ Examples:
     parser.add_argument('--list', action='store_true', help='List available runs')
     args = parser.parse_args()
 
-    script_dir = Path(__file__).parent.parent.parent
-
     if args.list:
         runs_found = []
         for label, root in [
-            ('workspace', script_dir / 'logs' / 'trajectory_runs'),
-            ('install', script_dir / 'install' / 'drone_control' / 'lib' /
+            ('workspace', WORKSPACE_DIR / 'logs' / 'trajectory_runs'),
+            ('install', WORKSPACE_DIR / 'install' / 'drone_control' / 'lib' /
              'logs' / 'trajectory_runs'),
         ]:
             if root.exists():
@@ -274,8 +275,7 @@ Examples:
             print('No mission runs found')
         return
 
-    run_dir = "am_2807"  # Path(args.run_dir) if args.run_dir else find_latest_run(script_dir)
-    run_dir = Path(run_dir)
+    run_dir = Path(args.run_dir) if args.run_dir else DEFAULT_RUN_DIR
     print(f'Loading data from: {run_dir}')
 
     try:

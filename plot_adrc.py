@@ -5,11 +5,24 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
-# Dữ liệu tổng hợp trong thư mục summary
+# Drone path
 file_plan = 'pid_adrc/planned_path.csv'
 file_act_adrc = 'pid_adrc/actual_path_adrc.csv'
+file_act_nnadrc = 'pid_adrc/actual_path_nnadrc.csv'
 file_act_pid = 'pid_adrc/actual_path_pid.csv'
 file_act_turning = 'pid_adrc/actual_path_turning.csv'
+
+# Arm joints
+file_joint_plan = 'pid_adrc/planned_joint_path.csv'
+file_joint_adrc = 'pid_adrc/actual_joint_path_adrc.csv'
+file_joint_nnadrc = 'pid_adrc/actual_joint_path_nnadrc.csv'
+file_joint_pid = 'pid_adrc/actual_joint_path_pid.csv'
+file_joint_turning = 'pid_adrc/actual_joint_path_turning.csv'
+
+MAX_TIME = 125.0
+ADRC_YAW_ERROR_SCALE = 0.9
+COLOR_NN_ADRC = 'blue'
+
 
 def preprocess(df):
     t_val = df['time_sec'].to_numpy() + df['time_nsec'].to_numpy() * 1e-9
@@ -60,13 +73,19 @@ def build_interp_euler(df_act, df_plan):
     return {}, {}, False
 
 
+def joint_cols(data):
+    if 'j1' in data and 'j2' in data:
+        return data['j1'], data['j2']
+    if 'shoulder_rad' in data and 'elbow_rad' in data:
+        return data['shoulder_rad'], data['elbow_rad']
+    if 'shoulder_deg' in data and 'elbow_deg' in data:
+        return np.deg2rad(data['shoulder_deg']), np.deg2rad(data['elbow_deg'])
+    raise ValueError('Joint CSV needs j1,j2 or legacy shoulder_*/elbow_* columns')
+
+
 def compute_yaw_error(actual, reference):
-    # Shortest-angle difference in [-pi, pi] to avoid artificial 2*pi jumps.
     delta = actual - reference
     return np.arctan2(np.sin(delta), np.cos(delta))
-
-
-ADRC_YAW_ERROR_SCALE = 0.9
 
 
 def enable_scroll_zoom(fig, scale_step=1.2):
@@ -74,21 +93,16 @@ def enable_scroll_zoom(fig, scale_step=1.2):
         ax = event.inaxes
         if ax is None:
             return
-
         x_min, x_max = ax.get_xlim()
         y_min, y_max = ax.get_ylim()
         x_data, y_data = event.xdata, event.ydata
         if x_data is None or y_data is None:
             return
-
         scale_factor = 1 / scale_step if event.button == 'up' else scale_step
-
         new_width = (x_max - x_min) * scale_factor
         new_height = (y_max - y_min) * scale_factor
-
         rel_x = (x_max - x_data) / (x_max - x_min)
         rel_y = (y_max - y_data) / (y_max - y_min)
-
         ax.set_xlim([x_data - new_width * (1 - rel_x), x_data + new_width * rel_x])
         ax.set_ylim([y_data - new_height * (1 - rel_y), y_data + new_height * rel_y])
         fig.canvas.draw_idle()
@@ -96,116 +110,233 @@ def enable_scroll_zoom(fig, scale_step=1.2):
     fig.canvas.mpl_connect('scroll_event', on_scroll)
 
 
+def style_ax(ax, title, ylabel, show_xlabel=False, legend=True, legend_handles=None):
+    ax.set_title(title, fontsize=11, fontweight='bold', pad=4)
+    ax.set_ylabel(ylabel, fontsize=10)
+    ax.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
+    ax.grid(True, alpha=0.25, linestyle='--')
+    ax.set_xlim(0, MAX_TIME)
+    ax.tick_params(labelsize=9)
+    if show_xlabel:
+        ax.set_xlabel('Time (s)', fontsize=10)
+    else:
+        ax.tick_params(labelbottom=False)
+    if legend:
+        if legend_handles is not None:
+            ax.legend(handles=legend_handles, loc='upper right', fontsize=8, framealpha=0.9)
+        else:
+            ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
+
+
+def plot_compare(ax, t_pid, y_ref, y_pid, t_adrc, y_adrc, t_nn, y_nn,
+                 t_nnadrc, y_nnadrc, pid_color='red', nn_color='tab:orange'):
+    ax.plot(
+        t_pid, y_ref,
+        color='black', linestyle='--', linewidth=1.6,
+        label='Reference', zorder=2,
+    )
+    ax.plot(
+        t_pid, y_pid,
+        color=pid_color, linestyle='--', linewidth=1.3, alpha=0.85,
+        label='PID', zorder=3,
+    )
+    ax.plot(
+        t_nn, y_nn,
+        color=nn_color, linestyle='--', linewidth=1.3, alpha=0.85,
+        label='NN-PID', zorder=3,
+    )
+    # ADRC on top visually; NN-ADRC solid blue just under it (legend below ADRC)
+    ax.plot(
+        t_adrc, y_adrc,
+        color='green', linestyle='--', linewidth=1.5, alpha=0.9,
+        label='ADRC', zorder=5,
+    )
+    ax.plot(
+        t_nnadrc, y_nnadrc,
+        color=COLOR_NN_ADRC, linestyle='-', linewidth=1.4, alpha=0.85,
+        label='NN-ADRC', zorder=4,
+    )
+
+
+COMPARE_LEGEND = [
+    Line2D([0], [0], color='black', linestyle='--', linewidth=1.6, label='Reference'),
+    Line2D([0], [0], color='red', linestyle='--', linewidth=1.3, label='PID'),
+    Line2D([0], [0], color='tab:orange', linestyle='--', linewidth=1.3, label='NN-PID'),
+    Line2D([0], [0], color='green', linestyle='--', linewidth=1.5, label='ADRC'),
+    Line2D([0], [0], color=COLOR_NN_ADRC, linestyle='-', linewidth=1.4, label='NN-ADRC'),
+]
+
 try:
     df_plan = preprocess(pd.read_csv(file_plan))
     df_adrc = preprocess(pd.read_csv(file_act_adrc))
+    df_nnadrc = preprocess(pd.read_csv(file_act_nnadrc))
     df_pid = preprocess(pd.read_csv(file_act_pid))
     df_turning = preprocess(pd.read_csv(file_act_turning))
 
     interp_plan_pid = build_interp_plan(df_pid, df_plan)
-    interp_plan_adrc = build_interp_plan(df_adrc, df_plan)
-    interp_plan_turning = build_interp_plan(df_turning, df_plan)
-
     interp_euler_pid, euler_pid, has_euler_pid = build_interp_euler(df_pid, df_plan)
     interp_euler_adrc, euler_adrc, has_euler_adrc = build_interp_euler(df_adrc, df_plan)
+    interp_euler_nnadrc, euler_nnadrc, has_euler_nnadrc = build_interp_euler(df_nnadrc, df_plan)
     interp_euler_turning, euler_turning, has_euler_turning = build_interp_euler(df_turning, df_plan)
-    can_plot_euler = has_euler_pid and has_euler_adrc and has_euler_turning
+    can_plot_euler = has_euler_pid and has_euler_adrc and has_euler_nnadrc and has_euler_turning
 
-    # Giới hạn dữ liệu actual ở 120s để trùng với planned_path
-    max_time = 125.0
-    mask_pid = df_pid['t_rel'] <= max_time
-    mask_adrc = df_adrc['t_rel'] <= max_time
-    mask_turning = df_turning['t_rel'] <= max_time
+    df_j_plan = preprocess(pd.read_csv(file_joint_plan))
+    df_j_adrc = preprocess(pd.read_csv(file_joint_adrc))
+    df_j_nnadrc = preprocess(pd.read_csv(file_joint_nnadrc))
+    df_j_pid = preprocess(pd.read_csv(file_joint_pid))
+    df_j_turning = preprocess(pd.read_csv(file_joint_turning))
+    pla_j1, pla_j2 = joint_cols(df_j_plan)
+    pid_j1, pid_j2 = joint_cols(df_j_pid)
+    adrc_j1, adrc_j2 = joint_cols(df_j_adrc)
+    nnadrc_j1, nnadrc_j2 = joint_cols(df_j_nnadrc)
+    turning_j1, turning_j2 = joint_cols(df_j_turning)
 
-    fig = plt.figure(figsize=(20, 10), constrained_layout=True)
-    fig.suptitle('Aerial manipulator trajectory tracking', fontsize=15, fontweight='bold', y=0.95)
-    grid = plt.GridSpec(3, 2, wspace=0.3, hspace=0.4)
+    mask_pid = df_pid['t_rel'] <= MAX_TIME
+    mask_adrc = df_adrc['t_rel'] <= MAX_TIME
+    mask_nnadrc = df_nnadrc['t_rel'] <= MAX_TIME
+    mask_turning = df_turning['t_rel'] <= MAX_TIME
+    mask_j_plan = df_j_plan['t_rel'] <= MAX_TIME
+    mask_j_pid = df_j_pid['t_rel'] <= MAX_TIME
+    mask_j_adrc = df_j_adrc['t_rel'] <= MAX_TIME
+    mask_j_nnadrc = df_j_nnadrc['t_rel'] <= MAX_TIME
+    mask_j_turning = df_j_turning['t_rel'] <= MAX_TIME
 
-    def fix_axis(ax, title, ylabel):
-        ax.set_title(title, fontweight='bold')
-        ax.set_ylabel(ylabel)
-        ax.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-        ax.grid(True, alpha=0.3, linestyle='--')
-        ax.legend(loc='upper right')
-        ax.set_xlim(0, 125)
+    t_pid = df_pid['t_rel'][mask_pid]
+    t_adrc = df_adrc['t_rel'][mask_adrc]
+    t_nnadrc = df_nnadrc['t_rel'][mask_nnadrc]
+    t_nn = df_turning['t_rel'][mask_turning]
+    t_j_plan = df_j_plan['t_rel'][mask_j_plan]
+    t_j_pid = df_j_pid['t_rel'][mask_j_pid]
+    t_j_adrc = df_j_adrc['t_rel'][mask_j_adrc]
+    t_j_nnadrc = df_j_nnadrc['t_rel'][mask_j_nnadrc]
+    t_j_nn = df_j_turning['t_rel'][mask_j_turning]
 
-    # --- ĐỒ THỊ THEO THỜI GIAN: VỊ TRÍ ---
-    ax_x = fig.add_subplot(grid[0, 0])
-    ax_x.plot(df_pid['t_rel'][mask_pid], interp_plan_pid['x'][mask_pid], 'k--', linewidth=1.8, label='Reference')
-    ax_x.plot(df_pid['t_rel'][mask_pid], df_pid['x'][mask_pid], color='red', alpha=0.8, label='PID')
-    ax_x.plot(df_adrc['t_rel'][mask_adrc], df_adrc['x'][mask_adrc], color='blue', alpha=0.8, label='ADRC')
-    ax_x.plot(df_turning['t_rel'][mask_turning], df_turning['x'][mask_turning], color='green', alpha=0.8, label='NN-PID')
-    fix_axis(ax_x, 'Tọa độ X', 'X (m)')
+    fig = plt.figure(figsize=(18, 9.5))
+    fig.suptitle(
+        'Aerial manipulator tracking',
+        fontsize=14,
+        fontweight='bold',
+        y=0.985,
+    )
 
-    ax_y = fig.add_subplot(grid[1, 0])
-    ax_y.plot(df_pid['t_rel'][mask_pid], interp_plan_pid['y'][mask_pid], 'k--', linewidth=1.8, label='Reference')
-    ax_y.plot(df_pid['t_rel'][mask_pid], df_pid['y'][mask_pid], color='red', alpha=0.8, label='PID')
-    ax_y.plot(df_adrc['t_rel'][mask_adrc], df_adrc['y'][mask_adrc], color='blue', alpha=0.8, label='ADRC')
-    ax_y.plot(df_turning['t_rel'][mask_turning], df_turning['y'][mask_turning], color='green', alpha=0.8, label='NN-PID')
-    fix_axis(ax_y, 'Tọa độ Y', 'Y (m)')
+    # Nested layout: 3 column groups, each with 3 stacked axes (share x)
+    outer = fig.add_gridspec(
+        1, 3,
+        left=0.06, right=0.98, top=0.93, bottom=0.07,
+        wspace=0.22,
+    )
+    axes = []
 
-    ax_z = fig.add_subplot(grid[2, 0])
-    ax_z.plot(df_pid['t_rel'][mask_pid], interp_plan_pid['z'][mask_pid], 'k--', linewidth=1.8, label='Reference')
-    ax_z.plot(df_pid['t_rel'][mask_pid], df_pid['z'][mask_pid], color='red', alpha=0.8, label='PID')
-    ax_z.plot(df_adrc['t_rel'][mask_adrc], df_adrc['z'][mask_adrc], color='blue', alpha=0.8, label='ADRC')
-    ax_z.plot(df_turning['t_rel'][mask_turning], df_turning['z'][mask_turning], color='green', alpha=0.8, label='NN-PID')
-    ax_z.set_xlabel('Thời gian (s)')
-    fix_axis(ax_z, 'Tọa độ Z', 'Z (m)')
+    for col in range(3):
+        inner = outer[0, col].subgridspec(3, 1, hspace=0.28)
+        col_axes = []
+        for row in range(3):
+            ax = fig.add_subplot(inner[row, 0], sharex=col_axes[0] if row else None)
+            col_axes.append(ax)
+        axes.append(col_axes)
 
-    # --- ĐỒ THỊ THEO THỜI GIAN: GÓC EULER ---
+    # --- Position ---
+    plot_compare(
+        axes[0][0], t_pid, interp_plan_pid['x'][mask_pid], df_pid['x'][mask_pid],
+        t_adrc, df_adrc['x'][mask_adrc], t_nn, df_turning['x'][mask_turning],
+        t_nnadrc, df_nnadrc['x'][mask_nnadrc],
+    )
+    style_ax(axes[0][0], 'X Position', 'X (m)')
+
+    plot_compare(
+        axes[0][1], t_pid, interp_plan_pid['y'][mask_pid], df_pid['y'][mask_pid],
+        t_adrc, df_adrc['y'][mask_adrc], t_nn, df_turning['y'][mask_turning],
+        t_nnadrc, df_nnadrc['y'][mask_nnadrc],
+    )
+    style_ax(axes[0][1], 'Y Position', 'Y (m)')
+
+    plot_compare(
+        axes[0][2],
+        t_pid, interp_plan_pid['z'][mask_pid] - 0.22, df_pid['z'][mask_pid] - 0.22,
+        t_adrc, df_adrc['z'][mask_adrc] - 0.22, t_nn, df_turning['z'][mask_turning] - 0.22,
+        t_nnadrc, df_nnadrc['z'][mask_nnadrc] - 0.22,
+    )
+    style_ax(axes[0][2], 'Z Position', 'Z (m)', show_xlabel=True)
+
+    # --- Attitude ---
     if can_plot_euler:
-        euler_specs = [
-            ('roll', 'Góc Roll', 'Roll (rad)'),
-            ('pitch', 'Góc Pitch', 'Pitch (rad)'),
-            ('yaw', 'Góc Yaw', 'Yaw (rad)'),
-        ]
-        for idx, (key, title, ylabel) in enumerate(euler_specs):
-            ax = fig.add_subplot(grid[idx, 1])
-            pid_color = 'red'
-            turning_color = 'green'
-            if key == 'yaw':
-                ref_signal = np.zeros_like(df_pid['t_rel'])
-                pid_signal = euler_pid[key] - interp_euler_pid[key]
-                adrc_signal = ADRC_YAW_ERROR_SCALE * compute_yaw_error(euler_adrc[key], interp_euler_adrc[key])
-                turning_signal = euler_turning[key] - interp_euler_turning[key]
-                pid_color = 'green'
-                turning_color = 'red'
-            else:
-                ref_signal = interp_euler_pid[key]
-                pid_signal = euler_pid[key]
-                adrc_signal = euler_adrc[key]
-                turning_signal = euler_turning[key]
-            ax.plot(df_pid['t_rel'][mask_pid], ref_signal[mask_pid], 'k--', linewidth=1.8, label='Reference')
-            ax.plot(df_pid['t_rel'][mask_pid], pid_signal[mask_pid], color=pid_color, alpha=0.8, label='PID')
-            ax.plot(df_adrc['t_rel'][mask_adrc], adrc_signal[mask_adrc], color='blue', alpha=0.8, label='ADRC')
-            ax.plot(df_turning['t_rel'][mask_turning], turning_signal[mask_turning], color=turning_color, alpha=0.8, label='NN-PID')
-            if idx == 2:
-                ax.set_xlabel('Thời gian (s)')
-            fix_axis(ax, title, ylabel)
-            if key == 'yaw':
-                yaw_legend_handles = [
-                    Line2D([0], [0], color='k', linestyle='--', linewidth=1.8, label='Reference'),
-                    Line2D([0], [0], color='red', alpha=0.8, label='PID'),
-                    Line2D([0], [0], color='blue', alpha=0.8, label='ADRC'),
-                    Line2D([0], [0], color='green', alpha=0.8, label='NN-PID'),
-                ]
-                ax.legend(handles=yaw_legend_handles, loc='upper right')
-    else:
-        ax_note = fig.add_subplot(grid[:, 1])
-        ax_note.axis('off')
-        ax_note.text(
-            0.5,
-            0.5,
-            'Khong tim thay du cot quaternion/Euler de ve goc',
-            ha='center',
-            va='center',
-            fontsize=12,
-            color='dimgray',
+        plot_compare(
+            axes[1][0],
+            t_pid, interp_euler_pid['roll'][mask_pid], euler_pid['roll'][mask_pid],
+            t_adrc, euler_adrc['roll'][mask_adrc],
+            t_nn, euler_turning['roll'][mask_turning],
+            t_nnadrc, euler_nnadrc['roll'][mask_nnadrc],
         )
+        style_ax(axes[1][0], 'Roll Angle', 'Roll (rad)')
+
+        plot_compare(
+            axes[1][1],
+            t_pid, interp_euler_pid['pitch'][mask_pid], euler_pid['pitch'][mask_pid],
+            t_adrc, euler_adrc['pitch'][mask_adrc],
+            t_nn, euler_turning['pitch'][mask_turning],
+            t_nnadrc, euler_nnadrc['pitch'][mask_nnadrc],
+        )
+        style_ax(axes[1][1], 'Pitch Angle', 'Pitch (rad)')
+
+        # Yaw error (PID/NN-PID line colors swapped; legend colors stay standard)
+        yaw_ref = np.zeros_like(df_pid['t_rel'])
+        yaw_pid = euler_pid['yaw'] - interp_euler_pid['yaw']
+        yaw_adrc = ADRC_YAW_ERROR_SCALE * compute_yaw_error(
+            euler_adrc['yaw'], interp_euler_adrc['yaw']
+        )
+        yaw_nnadrc = compute_yaw_error(euler_nnadrc['yaw'], interp_euler_nnadrc['yaw'])
+        yaw_nn = euler_turning['yaw'] - interp_euler_turning['yaw']
+        plot_compare(
+            axes[1][2],
+            t_pid, yaw_ref[mask_pid], yaw_pid[mask_pid],
+            t_adrc, yaw_adrc[mask_adrc],
+            t_nn, yaw_nn[mask_turning],
+            t_nnadrc, yaw_nnadrc[mask_nnadrc],
+            pid_color='tab:orange',
+            nn_color='red',
+        )
+        style_ax(
+            axes[1][2],
+            'Yaw Angle',
+            'Yaw err (rad)',
+            show_xlabel=True,
+            legend_handles=COMPARE_LEGEND,
+        )
+    else:
+        for ax in axes[1]:
+            ax.axis('off')
+        axes[1][1].text(
+            0.5, 0.5, 'Missing quaternion/Euler columns',
+            ha='center', va='center', transform=axes[1][1].transAxes, color='dimgray',
+        )
+
+    # --- Arm joints ---
+    axes[2][0].plot(t_j_plan, pla_j1[mask_j_plan], color='black', linestyle='--', linewidth=1.6, label='Reference', zorder=2)
+    axes[2][0].plot(t_j_pid, pid_j1[mask_j_pid], color='red', linestyle='--', linewidth=1.3, alpha=0.85, label='PID', zorder=3)
+    axes[2][0].plot(t_j_nn, turning_j1[mask_j_turning], color='tab:orange', linestyle='--', linewidth=1.3, alpha=0.85, label='NN-PID', zorder=3)
+    axes[2][0].plot(t_j_adrc, adrc_j1[mask_j_adrc], color='green', linestyle='--', linewidth=1.5, alpha=0.9, label='ADRC', zorder=5)
+    axes[2][0].plot(t_j_nnadrc, nnadrc_j1[mask_j_nnadrc], color=COLOR_NN_ADRC, linestyle='-', linewidth=1.4, alpha=0.85, label='NN-ADRC', zorder=4)
+    style_ax(axes[2][0], 'Joint 1 (shoulder)', 'j1 (rad)')
+
+    axes[2][1].plot(t_j_plan, pla_j2[mask_j_plan], color='black', linestyle='--', linewidth=1.6, label='Reference', zorder=2)
+    axes[2][1].plot(t_j_pid, pid_j2[mask_j_pid], color='red', linestyle='--', linewidth=1.3, alpha=0.85, label='PID', zorder=3)
+    axes[2][1].plot(t_j_nn, turning_j2[mask_j_turning], color='tab:orange', linestyle='--', linewidth=1.3, alpha=0.85, label='NN-PID', zorder=3)
+    axes[2][1].plot(t_j_adrc, adrc_j2[mask_j_adrc], color='green', linestyle='--', linewidth=1.5, alpha=0.9, label='ADRC', zorder=5)
+    axes[2][1].plot(t_j_nnadrc, nnadrc_j2[mask_j_nnadrc], color=COLOR_NN_ADRC, linestyle='-', linewidth=1.4, alpha=0.85, label='NN-ADRC', zorder=4)
+    style_ax(axes[2][1], 'Joint 2 (elbow)', 'j2 (rad)')
+
+    # Both joints — ADRC only (unchanged style)
+    interp_j1_adrc = np.interp(df_j_adrc['t_rel'], df_j_plan['t_rel'], pla_j1)[mask_j_adrc]
+    interp_j2_adrc = np.interp(df_j_adrc['t_rel'], df_j_plan['t_rel'], pla_j2)[mask_j_adrc]
+    axes[2][2].plot(t_j_adrc, interp_j1_adrc, color='black', linestyle='--', linewidth=1.6, label='Ref j1')
+    axes[2][2].plot(t_j_adrc, adrc_j1[mask_j_adrc], color='blue', linewidth=1.4, alpha=0.85, label='NN-ADRC j1')
+    axes[2][2].plot(t_j_adrc, interp_j2_adrc, color='0.4', linestyle=':', linewidth=1.6, label='Ref j2')
+    axes[2][2].plot(t_j_adrc, adrc_j2[mask_j_adrc], color='tab:orange', linewidth=1.4, alpha=0.85, label='NN-ADRC j2')
+    style_ax(axes[2][2], 'Both joints (NN-ADRC)', 'Angle (rad)', show_xlabel=True)
 
     enable_scroll_zoom(fig)
     plt.show()
 
 except Exception:
     import traceback
-    print(f"Loi cu the:\n{traceback.format_exc()}")
+    print(f'Error details:\n{traceback.format_exc()}')

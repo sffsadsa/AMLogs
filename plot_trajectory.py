@@ -14,7 +14,7 @@ from matplotlib.ticker import ScalarFormatter
 from scipy.spatial.transform import Rotation
 
 WORKSPACE_DIR = Path(__file__).resolve().parent
-DEFAULT_RUN_DIR = WORKSPACE_DIR / 'am_2907'
+DEFAULT_RUN_DIR = WORKSPACE_DIR / 'am_2807'
 
 
 def find_latest_run(workspace_root):
